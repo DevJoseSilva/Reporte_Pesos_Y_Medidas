@@ -1,0 +1,11 @@
+bash
+venv/
+.env
+__pycache__/
+*.pyc
+.env
+excel/
+exceles/
+
+*.csv
+temp/
