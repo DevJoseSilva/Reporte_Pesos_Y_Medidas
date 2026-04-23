@@ -221,30 +221,32 @@ def obtener_datos_mysql(item_ids):
                 apv_art_id int,
                 apv_sku varchar(250),
                 prv_nombre varchar(150),
-                mar_nombre varchar(250)
+                mar_nombre varchar(250),
+                tpa_id int null
             )
             """)
         )
         conn.execute(
             text("""
-            insert into tp_skus (apv_art_id, apv_sku, prv_nombre, mar_nombre)
-        SELECT 
-            ap.apv_art_id,
-            ap.apv_sku,
-            p.prv_nombre,
-            m.mar_nombre
-        FROM articulos_proveedores ap
-        INNER JOIN tp_sku_distinto tp1
-            ON ap.apv_art_id = tp1.tp_sku
-        AND ap.apv_principal = 1
-        AND ap.apv_eliminado IS NULL
-        INNER JOIN proveedores p ON p.prv_id = ap.apv_prv_id AND p.prv_eliminado IS NULL
-        INNER JOIN articulos a   ON a.art_id  = tp1.tp_art_id AND a.art_eliminado IS NULL
-        INNER JOIN marcas m      ON a.art_mar_id = m.mar_id    AND m.mar_eliminado IS NULL
-        """)
+            insert into tp_skus (apv_art_id, apv_sku, prv_nombre, mar_nombre, tpa_id)
+            SELECT
+                ap.apv_art_id,
+                ap.apv_sku,
+                p.prv_nombre,
+                m.mar_nombre,
+                a.art_tpa_id
+            FROM articulos_proveedores ap
+            INNER JOIN tp_sku_distinto tp1
+                ON ap.apv_art_id = tp1.tp_sku
+               AND ap.apv_principal = 1
+               AND ap.apv_eliminado IS NULL
+            INNER JOIN proveedores p ON p.prv_id = ap.apv_prv_id AND p.prv_eliminado IS NULL
+            INNER JOIN articulos a   ON a.art_id  = tp1.tp_art_id AND a.art_eliminado IS NULL
+            INNER JOIN marcas m      ON a.art_mar_id = m.mar_id    AND m.mar_eliminado IS NULL
+            """)
         )
         conn.execute(
-            text("CREATE INDEX IDX_ART_SKU ON tp_skus(apv_art_id, apv_sku);")
+            text("CREATE INDEX IDX_ART_SKU ON tp_skus(apv_art_id, apv_sku, tpa_id);")
         )
 
         result = conn.execute(
@@ -272,7 +274,40 @@ def obtener_datos_mysql(item_ids):
                 "marca": row["marca"],
                 "sku_gme": row["sku_gme"],
                 "permalink": row["permalink"],
+                "skus_hijos": [],   # se llena en la siguiente consulta
             }
+
+        # --- Skus hijos de ensambles (solo donde tpa_id = 2) ----------------
+        # Agrupa por sku_padre para armar la lista de hijos por item
+        result_ens = conn.execute(
+            text("""
+            SELECT
+                tp1.apv_sku  AS sku_padre,
+                ap.apv_sku   AS sku_hijo
+            FROM tp_skus tp1
+            INNER JOIN ensambles e
+                ON tp1.apv_art_id = e.ens_art_padre
+               AND e.ens_eliminado IS NULL
+            JOIN articulos_proveedores ap
+                ON e.ens_art_hijo = ap.apv_art_id
+               AND ap.apv_principal = 1
+               AND ap.apv_eliminado IS NULL
+            WHERE tp1.tpa_id = 2
+            ORDER BY tp1.apv_sku, ap.apv_sku
+        """)
+        )
+
+        # Mapa auxiliar: sku_padre → [sku_hijo, ...]
+        hijos_por_sku = {}
+        for row in result_ens.mappings():
+            padre = row["sku_padre"]
+            hijos_por_sku.setdefault(padre, []).append(row["sku_hijo"])
+
+        # Asignar los hijos a cada item usando su sku_gme como llave
+        for id_en_canal, datos in info.items():
+            sku = datos.get("sku_gme")
+            if sku and sku in hijos_por_sku:
+                datos["skus_hijos"] = hijos_por_sku[sku]
 
     print(f"  -> {len(info)} registros obtenidos de MySQL.")
     return info
