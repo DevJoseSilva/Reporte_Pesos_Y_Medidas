@@ -125,7 +125,34 @@ def procesar(nuevos, anteriores, info_mysql=None, info_mongo=None):
 
         pct_peso = safe_pct(peso_new, peso_old) if (peso_new and peso_old) else None
         pct_fact = safe_pct(fact_new, fact_old) if (fact_new and fact_old) else None
+        
+        # medidas
+        peso_vol_anterior_max = max(
+            (peso_old / 1000) if peso_old is not None else 0,
+            vol_old if vol_old is not None else 0
+        )
 
+        peso_vol_nuevo_max = max(
+            (peso_new / 1000) if peso_new is not None else 0,
+            vol_new if vol_new is not None else 0
+        )
+        porcent_diff = (
+            "-"
+            if peso_vol_anterior_max == 0
+            else (
+                (peso_vol_nuevo_max - peso_vol_anterior_max) / peso_vol_anterior_max 
+            )
+        )
+        
+        peso_ganador = "-"
+        peso_fisico_nuevo = (peso_new / 1000) if peso_new is not None else 0
+        peso_vol_nuevo = vol_new if vol_new is not None else 0
+
+        if peso_fisico_nuevo >= peso_vol_nuevo:
+            peso_ganador = "Físico"
+        else:
+            peso_ganador = "Volumétrico"
+            
         mysql = info_mysql.get(item_id, {})
         mongo = info_mongo.get(item_id, {})
 
@@ -151,6 +178,10 @@ def procesar(nuevos, anteriores, info_mysql=None, info_mongo=None):
             "ancho_old":      ancho_old, "ancho_new": ancho_new,
             "largo_old":      largo_old, "largo_new": largo_new,
             "vol_old":        vol_old,   "vol_new":   vol_new,
+            "peso_vol_anterior_max":    peso_vol_anterior_max,
+            "peso_vol_nuevo_max":       peso_vol_nuevo_max,
+            "porcent_diff":             porcent_diff,
+            "ganador":                 peso_ganador,
             "fact_old":       fact_old,  "fact_new":  fact_new,
             "pct_peso":       pct_peso,
             "pct_fact":       pct_fact,

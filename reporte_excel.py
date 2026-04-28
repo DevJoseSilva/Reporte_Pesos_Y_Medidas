@@ -141,7 +141,8 @@ def _hoja_resumen(wb, registros, periodo_det):
 #   14 – 15   → ALTO (cm)
 #   16 – 17   → ANCHO (cm)
 #   18 – 19   → LARGO (cm)
-#   20 – 20+N → ENSAMBLE  (SKU Hijo 1 … SKU Hijo N)  solo si hay ensambles
+#   20 - 25   → PESO VOLUMETRICO (Kg) y validacion vs peso fisico
+#   26 – 26+N → ENSAMBLE  (SKU Hijo 1 … SKU Hijo N)  solo si hay ensambles
 # ---------------------------------------------------------------------------
 
 # Indices fijos (1-based) de columnas de texto libre → alineación izquierda
@@ -150,7 +151,7 @@ _COLS_TEXTO_BASE = {4, 5, 6, 7, 10}   # Cuenta, Proveedor, Marca, SKU GME, Estad
 _COLS_PESO_BASE  = {12, 13}
 
 # Columna donde inician los hijos de ensamble (después de Largo Nvo.)
-_COL_INICIO_HIJOS = 20
+_COL_INICIO_HIJOS = 26
 
 
 def _hoja_detalle(wb, registros, periodo_det):
@@ -160,7 +161,7 @@ def _hoja_detalle(wb, registros, periodo_det):
 
     # Calcular el máximo de hijos en todo el reporte (puede ser 0)
     max_hijos = max((len(r.get("skus_hijos", [])) for r in registros), default=0)
-    total_cols = 19 + max_hijos
+    total_cols = 25 + max_hijos
 
     # --- Fila 1: periodo ---
     ws.merge_cells(f"A1:{get_column_letter(total_cols)}1")
@@ -178,10 +179,12 @@ def _hoja_detalle(wb, registros, periodo_det):
         (14, 15,  "ALTO (cm)",       "065F46"),
         (16, 17,  "ANCHO (cm)",      "7C3AED"),
         (18, 19,  "LARGO (cm)",      "9D174D"),
+        (20, 21,  "PESO VOLUMETRICO (Kg)", "76933C"), # nuevo grupo de celdas
+        (22, 25,  "Peso Max (Kg)", "60497A"),
     ]
     # Grupo ENSAMBLE solo si hay al menos un sku hijo en el reporte
     if max_hijos > 0:
-        grupos.append((_COL_INICIO_HIJOS, 19 + max_hijos, "ENSAMBLE", "B45309"))
+        grupos.append((_COL_INICIO_HIJOS, 25 + max_hijos, "ENSAMBLE", "B45309"))
 
     ws.row_dimensions[2].height = 18
     for (cs, ce, label, bg) in grupos:
@@ -223,10 +226,18 @@ def _hoja_detalle(wb, registros, periodo_det):
         # LARGO
         ("Largo Ant.",      12),
         ("Largo Nvo.",      12),
+        # PESO VOLUMETRICO
+        ("Vol. Ant. (kg)",  13),
+        ("Vol. Nvo. (kg)",  13),
+        # Validacion de datos de peso volumetrico vs peso fisico
+        ("Peso/Vol Ant. (kg)", 14),
+        ("Peso/Vol Nvo. (kg)", 14),
+        ("% Diff", 14),
+        ("Ganador", 15),
     ]
     # Columnas dinámicas de hijos
     for n in range(1, max_hijos + 1):
-        COLS.append((f"SKU Hijo {n}", 20))
+        COLS.append((f"SKU Hijo {n}", 21))
 
     ws.row_dimensions[3].height = 30
     for ci, (h, w) in enumerate(COLS, start=1):
@@ -268,7 +279,13 @@ def _hoja_detalle(wb, registros, periodo_det):
             r["alto_old"], r["alto_new"],
             r["ancho_old"], r["ancho_new"],
             r["largo_old"], r["largo_new"],
-            # cols 20+ – hijos de ensamble
+            #cols 20-21 – peso volumetrico
+            r["vol_old"], r["vol_new"],
+            # cols 22-24 – validacion peso vs volumetrico
+            r["peso_vol_anterior_max"], r["peso_vol_nuevo_max"], 
+            r["porcent_diff"],
+            r["ganador"],
+            # cols 22+ – hijos de ensamble
             *hijos_padded,
         ]
 
@@ -290,6 +307,9 @@ def _hoja_detalle(wb, registros, periodo_det):
 
             if ci in _COLS_PESO_BASE and val is not None:
                 c.number_format = "#,##0"
+                
+            if ci == 24 and val is not None and isinstance(val, (int, float)):
+                c.number_format = '0.00%'
 
             # Columnas de hijos: fondo ligeramente distinto si tiene valor
             if ci >= _COL_INICIO_HIJOS and val is not None:
