@@ -142,7 +142,8 @@ def _hoja_resumen(wb, registros, periodo_det):
 #   16 – 17   → ANCHO (cm)
 #   18 – 19   → LARGO (cm)
 #   20 - 25   → PESO VOLUMETRICO (Kg) y validacion vs peso fisico
-#   26 – 26+N → ENSAMBLE  (SKU Hijo 1 … SKU Hijo N)  solo si hay ensambles
+#   26 - 30   → Medidas de articulo cat. GME (Alto, Ancho, Largo, Peso Fisico, Peso Volumetrico)
+#   31 – 31+N → ENSAMBLE  (SKU Hijo 1 … SKU Hijo N)  solo si hay ensambles
 # ---------------------------------------------------------------------------
 
 # Indices fijos (1-based) de columnas de texto libre → alineación izquierda
@@ -150,8 +151,8 @@ _COLS_TEXTO_BASE = {4, 5, 6, 7, 10}   # Cuenta, Proveedor, Marca, SKU GME, Estad
 # Indices fijos de columnas numéricas enteras (pesos)
 _COLS_PESO_BASE  = {12, 13}
 
-# Columna donde inician los hijos de ensamble (después de Largo Nvo.)
-_COL_INICIO_HIJOS = 26
+# Columna donde inician los hijos de ensamble (después de medidas de sku_cat)
+_COL_INICIO_HIJOS = 31
 
 
 def _hoja_detalle(wb, registros, periodo_det):
@@ -161,7 +162,7 @@ def _hoja_detalle(wb, registros, periodo_det):
 
     # Calcular el máximo de hijos en todo el reporte (puede ser 0)
     max_hijos = max((len(r.get("skus_hijos", [])) for r in registros), default=0)
-    total_cols = 25 + max_hijos
+    total_cols = 30 + max_hijos
 
     # --- Fila 1: periodo ---
     ws.merge_cells(f"A1:{get_column_letter(total_cols)}1")
@@ -175,16 +176,17 @@ def _hoja_detalle(wb, registros, periodo_det):
     grupos = [
         (1,   1,  "CLASIFICACION",   "334155"),
         (2,  11,  "IDENTIFICACION",  "334155"),
-        (12, 13,  "PESO FISICO (g)", "1D4ED8"),
+        (12, 13,  "PESO FISICO (Kg)", "1D4ED8"),
         (14, 15,  "ALTO (cm)",       "065F46"),
         (16, 17,  "ANCHO (cm)",      "7C3AED"),
         (18, 19,  "LARGO (cm)",      "9D174D"),
         (20, 21,  "PESO VOLUMETRICO (Kg)", "76933C"), # nuevo grupo de celdas
         (22, 25,  "Peso Max (Kg)", "60497A"),
+        (26, 30,  "Medidas de articulo cat. GME", "9B891D")
     ]
     # Grupo ENSAMBLE solo si hay al menos un sku hijo en el reporte
     if max_hijos > 0:
-        grupos.append((_COL_INICIO_HIJOS, 25 + max_hijos, "ENSAMBLE", "B45309"))
+        grupos.append((_COL_INICIO_HIJOS, 30 + max_hijos, "ENSAMBLE", "B45309"))
 
     ws.row_dimensions[2].height = 18
     for (cs, ce, label, bg) in grupos:
@@ -215,8 +217,8 @@ def _hoja_detalle(wb, registros, periodo_det):
         ("Estado",          14),
         ("Permalink",       30),
         # PESO FISICO
-        ("Peso Ant. (g)",   14),
-        ("Peso Nuevo (g)",  14),
+        ("Peso Ant. (Kg)",   14),
+        ("Peso Nuevo (Kg)",  14),
         # ALTO
         ("Alto Ant.",       11),
         ("Alto Nvo.",       11),
@@ -230,10 +232,16 @@ def _hoja_detalle(wb, registros, periodo_det):
         ("Vol. Ant. (kg)",  13),
         ("Vol. Nvo. (kg)",  13),
         # Validacion de datos de peso volumetrico vs peso fisico
-        ("Peso/Vol Ant. (kg)", 14),
-        ("Peso/Vol Nvo. (kg)", 14),
+        ("Peso Max Ant. (kg)", 14),
+        ("Peso Max Nvo. (kg)", 14),
         ("% Diff", 14),
         ("Ganador", 15),
+        # Medidas de articulo cat. GME
+        ("Alto", 14),
+        ("Ancho", 14),
+        ("Largo", 14),
+        ("Peso F. (Kg)", 14),
+        ("Peso Vol. (Kg)", 14),
     ]
     # Columnas dinámicas de hijos
     for n in range(1, max_hijos + 1):
@@ -285,7 +293,10 @@ def _hoja_detalle(wb, registros, periodo_det):
             r["peso_vol_anterior_max"], r["peso_vol_nuevo_max"], 
             r["porcent_diff"],
             r["ganador"],
-            # cols 22+ – hijos de ensamble
+            # cols 26 - 30 – medidas de articulo cat. GME
+            r["alto"], r["ancho"], r["largo"], 
+            r["peso_f"], r["peso_v"],
+            # cols 31+ – hijos de ensamble
             *hijos_padded,
         ]
 
@@ -306,7 +317,7 @@ def _hoja_detalle(wb, registros, periodo_det):
                 c.alignment = lft()
 
             if ci in _COLS_PESO_BASE and val is not None:
-                c.number_format = "#,##0"
+                c.number_format = "0.00"
                 
             if ci == 24 and val is not None and isinstance(val, (int, float)):
                 c.number_format = '0.00%'
