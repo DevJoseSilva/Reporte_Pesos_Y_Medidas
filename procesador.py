@@ -172,8 +172,8 @@ def procesar(nuevos, anteriores, info_mysql=None, info_mongo=None):
             "fecha_creacion": mongo.get("fecha_creacion"),
             "estado":         mongo.get("estado"),
             # Dimensiones
-            "peso_old":       int(peso_old) if peso_old else None,
-            "peso_new":       int(peso_new) if peso_new else None,
+            "peso_old":       (peso_old / 1000) if peso_old else None,
+            "peso_new":       (peso_new / 1000) if peso_new else None,
             "alto_old":       alto_old,  "alto_new":  alto_new,
             "ancho_old":      ancho_old, "ancho_new": ancho_new,
             "largo_old":      largo_old, "largo_new": largo_new,
@@ -182,6 +182,14 @@ def procesar(nuevos, anteriores, info_mysql=None, info_mongo=None):
             "peso_vol_nuevo_max":       peso_vol_nuevo_max,
             "porcent_diff":             porcent_diff,
             "ganador":                 peso_ganador,
+            
+            # Dimenciones de articulos
+            "alto":           mysql.get("alto"),
+            "ancho":          mysql.get("ancho"),
+            "largo":          mysql.get("largo"),
+            "peso_f":         (mysql.get("peso_f") / 1000) if mysql.get("peso_f") else None,
+            "peso_v":         mysql.get("peso_v"),
+            
             "fact_old":       fact_old,  "fact_new":  fact_new,
             "pct_peso":       pct_peso,
             "pct_fact":       pct_fact,

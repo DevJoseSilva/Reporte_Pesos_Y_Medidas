@@ -52,15 +52,17 @@ create temporary table tp_skus(
 	apv_sku varchar(250),
 	prv_nombre varchar(150),
 	mar_nombre varchar(250),
-	tpa_id int null
+	tpa_id int null,
+	prv_autopartes int null
 );
-insert into tp_skus (apv_art_id, apv_sku, prv_nombre, mar_nombre, tpa_id)
+insert into tp_skus (apv_art_id, apv_sku, prv_nombre, mar_nombre, tpa_id, prv_autopartes)
 SELECT 
     ap.apv_art_id,
     ap.apv_sku,
     p.prv_nombre,
     m.mar_nombre,
-    a.art_tpa_id 
+    a.art_tpa_id,
+    p.prv_autopartes 
 FROM articulos_proveedores ap
 INNER JOIN tp_sku_distinto tp1
     ON ap.apv_art_id = tp1.tp_sku
@@ -72,7 +74,35 @@ INNER JOIN marcas m      ON a.art_mar_id = m.mar_id    AND m.mar_eliminado IS NU
 ;
 ALTER TABLE tp_skus ADD INDEX idx_sku (apv_art_id, apv_sku, tpa_id);
 
-
+Drop temporary table if exists tp_medidas;
+create temporary table tp_medidas(
+	tp_art_id int,
+	tp_alto decimal(12,2) null,
+	tp_ancho decimal(12,2) null,
+	tp_largo decimal(12,2) null,
+	tp_peso_f decimal(12,2) null,
+	tp_peso_v decimal(12,2) null
+);
+Insert into tp_medidas (tp_art_id, tp_alto, tp_ancho, tp_largo, tp_peso_f, tp_peso_v)
+SELECT tp.apv_art_id,
+	cb.cab_alto,
+	cb.cab_ancho,
+	cb.cab_largo, 
+ 	ROUND(cb.cab_peso, 2),
+	ROUND(cb.cab_peso_volumetrico, 2) 
+FROM tp_skus tp
+left join articulos_categorias_business acb
+	ON tp.apv_art_id = acb.acb_art_id
+    AND acb.acb_eliminado IS NULL
+    AND (
+        (tp.prv_autopartes = 1 AND acb.acb_ctc_id = 14)
+        OR ((tp.prv_autopartes = 0 OR tp.prv_autopartes IS NULL) AND acb.acb_ctc_id = 1)
+    )
+left join categorias_business cb 
+	on acb.acb_cab_id = cb.cab_id
+	and cb.cab_eliminado is null
+;
+create index tp_medida_sku on tp_medidas(tp_art_id);
 
 SELECT
     arc_id_en_canal AS id_en_canal,
@@ -84,9 +114,15 @@ SELECT
         'https://www.mercadolibre.com.mx/publicaciones/listado?page=1&search=',
         arc_id_en_canal,
         '&sort=DEFAULT'
-    ) AS permalink
+    ) AS permalink,
+    tp3.tp_alto alto,
+    tp3.tp_ancho ancho,
+    tp3.tp_largo largo,
+    tp3.tp_peso_f peso_f,
+    tp3.tp_peso_v peso_v
 FROM tp_mlm_publicados tp1
 LEFT JOIN tp_skus tp2 ON tp1.arc_art_id = tp2.apv_art_id
+left join tp_medidas tp3 on tp1.arc_art_id = tp3.tp_art_id
 ;
 
 select tp1.apv_sku as sku_padre ,ap.apv_sku as sku_hijo from tp_skus tp1
