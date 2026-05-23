@@ -32,78 +32,131 @@ from config import (
 
 
 def obtener_datos_redshift(fecha_inicio, fecha_fin):
-    """
-    Devuelve dos dicts:
-      nuevos    = { item_id: {fecha, peso, alto, ancho, largo} }
-      anteriores = { item_id: {peso, alto, ancho, largo} }
-    """
+
     print("  Conectando a Redshift...")
     conn = psycopg2.connect(**REDSHIFT)
     cur = conn.cursor()
 
-    print(f"  Consultando registros nuevos ({fecha_inicio} -> {fecha_fin})...")
-    cur.execute(f"""
+    print("  Creando tablas temporales...")
+
+    query = f"""
+    DROP TABLE IF EXISTS tmp_nuevos;
+    DROP TABLE IF EXISTS tmp_anteriores;
+    drop table if exists tmp_costos;
+    
+    CREATE TEMP TABLE tmp_costos
+    DISTKEY(item_id)
+    SORTKEY(item_id)
+    AS
+    SELECT 
+        hmed.item_id,
+        hmed.list_cost
+    FROM public.historico_mercado_envios_5_dias hmed
+    WHERE DATE(hmed.fecha_consulta) = (
+        SELECT DATEADD(day, -1, MAX(DATE(fecha_consulta)))
+        FROM public.historico_mercado_envios_5_dias
+    );
+
+
+    CREATE TEMP TABLE tmp_nuevos
+    DISTKEY(item_id)
+    SORTKEY(item_id)
+    AS
+    SELECT
+        t1.item_id,
+        t1.fecha_insercion,
+        t1.seller_package_weight,
+        t1.seller_package_height,
+        t1.seller_package_width,
+        t1.seller_package_length,
+        tp1.list_cost AS costo_envio,
+        t1.id
+    FROM {TABLA_REDSHIFT} t1
+    left join tmp_costos as tp1 on t1.item_id = tp1.item_id
+    WHERE ultimo = 1
+      AND CAST(fecha_insercion AS DATE)
+          BETWEEN '{fecha_inicio}' AND '{fecha_fin}';
+
+
+
+    CREATE TEMP TABLE tmp_anteriores AS
+    SELECT
+        t.item_id,
+        t.seller_package_weight,
+        t.seller_package_height,
+        t.seller_package_width,
+        t.seller_package_length
+    FROM {TABLA_REDSHIFT} t
+    INNER JOIN (
         SELECT
             item_id,
-            fecha_insercion,
-            seller_package_weight,
-            seller_package_height,
-            seller_package_width,
-            seller_package_length
+            MAX(id) AS max_id
         FROM {TABLA_REDSHIFT}
-        WHERE ultimo = 1
-          AND CAST(fecha_insercion AS DATE) BETWEEN '{fecha_inicio}' AND '{fecha_fin}'
-    """)
-    nuevos = {}
-    for row in cur.fetchall():
-        item_id = row[0]
-        if item_id not in nuevos or str(row[1]) > str(nuevos[item_id]["fecha"]):
-            nuevos[item_id] = {
-                "fecha": str(row[1]),
-                "peso": row[2],
-                "alto": row[3],
-                "ancho": row[4],
-                "largo": row[5],
-            }
-    print(f"  -> {len(nuevos)} items con cambios detectados.")
-
-    if not nuevos:
-        cur.close()
-        conn.close()
-        return {}, {}
-
-    print("  Consultando registros anteriores...")
-    ids_sql = ", ".join(f"'{i}'" for i in nuevos.keys())
-    cur.execute(f"""
-        SELECT
-            t.item_id,
-            t.seller_package_weight,
-            t.seller_package_height,
-            t.seller_package_width,
-            t.seller_package_length
-        FROM {TABLA_REDSHIFT} t
-        INNER JOIN (
-            SELECT item_id, MAX(id) AS max_id
-            FROM {TABLA_REDSHIFT}
-            WHERE ultimo = 0
-              AND item_id IN ({ids_sql})
-            GROUP BY item_id
-        ) sub
+        WHERE ultimo = 0
+          AND item_id IN (
+              SELECT DISTINCT item_id
+              FROM tmp_nuevos
+          )
+        GROUP BY item_id
+    ) sub
         ON t.item_id = sub.item_id
-        AND t.id = sub.max_id
+       AND t.id = sub.max_id;
+    """
+
+    cur.execute(query)
+    conn.commit()
+
+    print("  Consultando datos finales...")
+
+    cur.execute("""
+        SELECT
+            n.item_id,
+            n.fecha_insercion,
+            n.seller_package_weight,
+            n.seller_package_height,
+            n.seller_package_width,
+            n.seller_package_length,
+            n.costo_envio,
+            a.seller_package_weight AS peso_anterior,
+            a.seller_package_height AS alto_anterior,
+            a.seller_package_width AS ancho_anterior,
+            a.seller_package_length AS largo_anterior
+        FROM tmp_nuevos n
+        LEFT JOIN tmp_anteriores a
+            ON n.item_id = a.item_id
     """)
-    anteriores = {}
-    for row in cur.fetchall():
-        anteriores[row[0]] = {
-            "peso": row[1],
-            "alto": row[2],
-            "ancho": row[3],
-            "largo": row[4],
-        }
+
+    rows = cur.fetchall()
 
     cur.close()
     conn.close()
-    print(f"  -> {len(anteriores)} items con historial previo para comparar.")
+
+    print(f"  -> {len(rows)} registros obtenidos.")
+
+    nuevos = {}
+    anteriores = {}
+
+    for row in rows:
+
+        item_id = row[0]
+
+        nuevos[item_id] = {
+            "fecha": str(row[1]),
+            "peso": row[2],
+            "alto": row[3],
+            "ancho": row[4],
+            "largo": row[5],
+            "costo_envio": row[6],
+        }
+
+        if row[7] is not None:
+            anteriores[item_id] = {
+                "peso": row[7],
+                "alto": row[8],
+                "ancho": row[9],
+                "largo": row[10],
+            }
+
     return nuevos, anteriores
 
 
@@ -196,21 +249,19 @@ def obtener_datos_mysql(item_ids):
         conn.execute(
             text("""
             create temporary table tp_sku_distinto(
-                tp_art_id int,
-                tp_sku varchar(250)
+                tp_art_id int
             )
             """)
         )
         conn.execute(
             text("""
             insert into tp_sku_distinto
-            select DISTINCT arc_art_id,
-                arc_art_id
+            select DISTINCT arc_art_id
             from tp_mlm_publicados
             """)
         )
         conn.execute(
-            text("CREATE INDEX IDX_SKU ON tp_sku_distinto(tp_art_id, tp_sku);")
+            text("CREATE INDEX IDX_SKU ON tp_sku_distinto(tp_art_id);")
         )
         
         # ! Tabla temporal para la info de skus con proveedor, marca
@@ -239,7 +290,7 @@ def obtener_datos_mysql(item_ids):
                 p.prv_autopartes
             FROM articulos_proveedores ap
             INNER JOIN tp_sku_distinto tp1
-                ON ap.apv_art_id = tp1.tp_sku
+                ON ap.apv_art_id = tp1.tp_art_id
                AND ap.apv_principal = 1
                AND ap.apv_eliminado IS NULL
             INNER JOIN proveedores p ON p.prv_id = ap.apv_prv_id AND p.prv_eliminado IS NULL
