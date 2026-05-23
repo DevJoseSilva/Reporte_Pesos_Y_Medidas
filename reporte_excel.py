@@ -12,6 +12,7 @@ Grupo IDENTIFICACION en Detalle Cambios:
     Ventas  | Fecha Creacion | Estado | Permalink
 """
 
+from decimal import Decimal
 import os
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -143,7 +144,8 @@ def _hoja_resumen(wb, registros, periodo_det):
 #   18 – 19   → LARGO (cm)
 #   20 - 25   → PESO VOLUMETRICO (Kg) y validacion vs peso fisico
 #   26 - 30   → Medidas de articulo cat. GME (Alto, Ancho, Largo, Peso Fisico, Peso Volumetrico)
-#   31 – 31+N → ENSAMBLE  (SKU Hijo 1 … SKU Hijo N)  solo si hay ensambles
+#   31        → Costo de envio de ese mlm (nuevo campo agregado)
+#   32 – 32+N → ENSAMBLE  (SKU Hijo 1 … SKU Hijo N)  solo si hay ensambles
 # ---------------------------------------------------------------------------
 
 # Indices fijos (1-based) de columnas de texto libre → alineación izquierda
@@ -152,7 +154,7 @@ _COLS_TEXTO_BASE = {4, 5, 6, 7, 10}   # Cuenta, Proveedor, Marca, SKU GME, Estad
 _COLS_PESO_BASE  = {12, 13}
 
 # Columna donde inician los hijos de ensamble (después de medidas de sku_cat)
-_COL_INICIO_HIJOS = 31
+_COL_INICIO_HIJOS = 32
 
 
 def _hoja_detalle(wb, registros, periodo_det):
@@ -182,11 +184,12 @@ def _hoja_detalle(wb, registros, periodo_det):
         (18, 19,  "LARGO (cm)",      "9D174D"),
         (20, 21,  "PESO VOLUMETRICO (Kg)", "76933C"), # nuevo grupo de celdas
         (22, 25,  "Peso Max (Kg)", "60497A"),
-        (26, 30,  "Medidas de articulo cat. GME", "9B891D")
+        (26, 30,  "Medidas de articulo cat. GME", "9B891D"),
+        (31, 31, "Costo de Envio (MLM)", "31869B")
     ]
     # Grupo ENSAMBLE solo si hay al menos un sku hijo en el reporte
     if max_hijos > 0:
-        grupos.append((_COL_INICIO_HIJOS, 30 + max_hijos, "ENSAMBLE", "B45309"))
+        grupos.append((_COL_INICIO_HIJOS, 31 + max_hijos, "ENSAMBLE", "B45309"))
 
     ws.row_dimensions[2].height = 18
     for (cs, ce, label, bg) in grupos:
@@ -242,6 +245,7 @@ def _hoja_detalle(wb, registros, periodo_det):
         ("Largo", 14),
         ("Peso F. (Kg)", 14),
         ("Peso Vol. (Kg)", 14),
+        ("Costo de Envio (MLM)", 14)
     ]
     # Columnas dinámicas de hijos
     for n in range(1, max_hijos + 1):
@@ -296,7 +300,9 @@ def _hoja_detalle(wb, registros, periodo_det):
             # cols 26 - 30 – medidas de articulo cat. GME
             r["alto"], r["ancho"], r["largo"], 
             r["peso_f"], r["peso_v"],
-            # cols 31+ – hijos de ensamble
+            # costo de envio Col 31
+            r["costo_envio"],
+            # cols 32+ – hijos de ensamble
             *hijos_padded,
         ]
 
@@ -321,6 +327,12 @@ def _hoja_detalle(wb, registros, periodo_det):
                 
             if ci == 24 and val is not None and isinstance(val, (int, float)):
                 c.number_format = '0.00%'
+                
+            if ci == 31 and val is not None and isinstance(
+                val,
+                (int, float, Decimal)
+            ):
+                c.number_format = '$ #,##0.00'
 
             # Columnas de hijos: fondo ligeramente distinto si tiene valor
             if ci >= _COL_INICIO_HIJOS and val is not None:

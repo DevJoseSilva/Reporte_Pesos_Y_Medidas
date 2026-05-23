@@ -183,6 +183,9 @@ def procesar(nuevos, anteriores, info_mysql=None, info_mongo=None):
             "porcent_diff":             porcent_diff,
             "ganador":                 peso_ganador,
             
+            #costo de envio
+            "costo_envio":    n.get("costo_envio", ""),
+            
             # Dimenciones de articulos
             "alto":           mysql.get("alto"),
             "ancho":          mysql.get("ancho"),

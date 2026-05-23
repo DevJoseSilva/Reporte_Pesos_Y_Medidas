@@ -35,15 +35,13 @@ ALTER TABLE tp_mlm_publicados ADD INDEX idx_art (arc_art_id);
 
 drop temporary table if exists tp_sku_distinto;
 create temporary table tp_sku_distinto(
-	tp_art_id int,
-	tp_sku varchar(250)
+	tp_art_id int
 );
 insert into tp_sku_distinto
-select DISTINCT arc_art_id,
-	arc_art_id
+select DISTINCT arc_art_id
 from tp_mlm_publicados
 ;
-create index idx_sku on tp_sku_distinto(tp_art_id, tp_sku);
+create index idx_sku on tp_sku_distinto(tp_art_id);
 
 
 DROP TEMPORARY TABLE IF EXISTS tp_skus;
@@ -65,7 +63,7 @@ SELECT
     p.prv_autopartes 
 FROM articulos_proveedores ap
 INNER JOIN tp_sku_distinto tp1
-    ON ap.apv_art_id = tp1.tp_sku
+    ON ap.apv_art_id = tp1.tp_art_id
    AND ap.apv_principal = 1
    AND ap.apv_eliminado IS NULL
 INNER JOIN proveedores p ON p.prv_id = ap.apv_prv_id AND p.prv_eliminado IS NULL
